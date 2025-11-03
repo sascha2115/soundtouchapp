@@ -1,10 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:window_size/window_size.dart';
-import 'package:bonsoir/bonsoir.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:xml/xml.dart';
-import 'package:http/http.dart' as http;
+import 'mysoundtouch.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +37,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blueGrey,
           brightness: Brightness.dark,
+          primary: Colors.white,
         ),
         useMaterial3: true,
         elevatedButtonTheme: ElevatedButtonThemeData(
@@ -57,36 +55,41 @@ class MyApp extends StatelessWidget {
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
   final String title;
-
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  // State variables to hold the dynamic text label
+  final MySoundTouch mySoundTouch = MySoundTouch();
+
+  // State variables to hold  text labels
   String _trackLabel = 'Track Name';
   String _artistLabel = 'Artist Name';
   String _albumLabel = 'Album Name';
   String _trackNumberLabel = '';
-  String _repeatLabel = 'Repeat: Off';
-  String _repeatMode = 'Off'; // or All or One
-  String _shuffleLabel = 'Shuffle: Off';
-  String _shuffleMode = 'Off'; // or Off
-  String _playStatus =
-      'PLAY_STATE'; // or PAUSE_STATE or STOP_STATE or BUFFERING_STATE
-  // TODO: something to the correct icon on the button
-  String _skipEnabled = '';
-  String _skipPreviousEnabled = '';
-  Map<String, String> _nowPlaying = {};
-  double _volume = 0;
-  double _maxVolume = 50; // originally 100 but we never want that loud
+  String _repeatLabel = 'Repeat';
+  String _shuffleLabel = 'Shuffle';
   String _volumeLabel = 'Volume';
   String _statusLabel = 'Discovering device...';
+  // More global variables
+  String _playStatus = 'PLAY_STATE';
+  // Play state can be: or PLAY_STATE or PAUSE_STATE or STOP_STATE or BUFFERING_STATE
+  String _repeatMode = 'Off';
+  // Repeat can be: All or One or Off
+  String _shuffleMode = 'Off';
+  // Shuffle can be: On or Off
+  double _volume = 0;
+  double _maxVolume = 50; // originally 100 but we never want that loud
   String _ipAddress = '';
-  String _source = 'STORED_MUSIC'; // or TUNEIN
-  String _sourceAccount = '';
+  String _source = 'STORED_MUSIC';
+  // Source can be: STORED_MUSIC or TUNEIN or some others...
+  String _sourceAccount = '10809696-105a-3721-e8b8-f4b5aa96c210/0';
+  // TODO: get source account on filebrowser open
+
+  // Array to hold the curent "NowPlaying" info
+  Map<String, String> _nowPlaying = {};
+  // TODO: maybe later we add _skipEnabled and _skipPreviousEnabled
 
   // Initialization
   @override
@@ -97,241 +100,104 @@ class _MyHomePageState extends State<MyHomePage> {
 
   // Initialization
   Future<void> _initAsync() async {
-    await discoverDevice();
-    await sendXmlNowPlaying();
-    updateLabelsFromNowPlaying();
-  }
-
-  // ****************************************************************************************************
-  // Discover Device
-  // ****************************************************************************************************
-  Future<void> discoverDevice() async {
-    // check if we have a stored IP from last time
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? lastip = prefs.getString('last_ip');
-    if (lastip != null) {
-      print('⚠️ Last stored IP was: $lastip');
-      // test connection
-      try {
-        final socket = await Socket.connect(
-          lastip,
-          8090,
-          timeout: Duration(seconds: 2),
-        );
-        socket.destroy();
-        print('⚠️ Device found at: $lastip');
-        _ipAddress = lastip;
-        setState(() {
-          _statusLabel = 'Device IP: $_ipAddress';
-        });
-        return;
-      } catch (e) {
-        print('⚠️ Device not found at: $lastip');
-      }
-    }
-    // start discovery
-    print('⚠️ Discovering device...');
-    var discovery = BonsoirDiscovery(type: '_soundtouch._tcp');
-    await discovery.initialize();
-    discovery.eventStream?.listen((event) async {
-      if (event is BonsoirDiscoveryServiceFoundEvent) {
-        await event.service?.resolve(discovery.serviceResolver);
-      } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
-        var host = event.service?.host;
-        if (host != null && host.isNotEmpty) {
-          var addresses = await InternetAddress.lookup(host);
-          if (addresses.isNotEmpty) {
-            String foundip = addresses.first.address;
-            print('⚠️ Device discovered at: ' + foundip);
-            _ipAddress = foundip;
-            SharedPreferences prefs = await SharedPreferences.getInstance();
-            await prefs.setString('last_ip', foundip);
-            discovery.stop();
-            setState(() {
-              _statusLabel = 'Device IP: $_ipAddress';
-            });
-          }
-        }
-      }
-    });
-    await discovery.start();
-  }
-
-  // ****************************************************************************************************
-  // Send command and receive XML for "Now Playing"
-  // ****************************************************************************************************
-  Future<void> sendXmlNowPlaying() async {
-    final url = Uri.parse('http://$_ipAddress:8090/now_playing');
-    try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Accept': 'application/xml',
-        }, // optional, hints server to send XML
-      );
-      if (response.statusCode == 200) {
-        String xmlString = response.body;
-        //print('XML Response: $xmlString');
-        final document = XmlDocument.parse(xmlString);
-        final nowPlaying = document.rootElement;
-        _nowPlaying['track'] = nowPlaying.getElement('track')?.text ?? '';
-        _nowPlaying['artist'] = nowPlaying.getElement('artist')?.text ?? '';
-        _nowPlaying['album'] = nowPlaying.getElement('album')?.text ?? '';
-        _nowPlaying['offset'] = nowPlaying.getElement('offset')?.text ?? '';
-        _nowPlaying['playStatus'] =
-            nowPlaying.getElement('playStatus')?.text ?? '';
-        _nowPlaying['repeatSetting'] =
-            nowPlaying.getElement('repeatSetting')?.text ?? '';
-        _nowPlaying['shuffleSetting'] =
-            nowPlaying.getElement('shuffleSetting')?.text ?? '';
-        final contentItem = document.rootElement.getElement('ContentItem');
-        if (contentItem != null) {
-          _nowPlaying['location'] =
-              contentItem.getAttribute('location')?.toString() ?? '';
-          // this is the location of the containing folder, not the actual track !
-        }
-        print('⚠️ Now Playing: $_nowPlaying');
-      } else {
-        print('HTTP error, code: ${response.statusCode}');
-        print('Body: ${response.body}');
-      }
-    } catch (e) {
-      print('Get XML now_playing HTTP error: $e');
+    String? foundIp = await mySoundTouch.discoverDevice();
+    _ipAddress = foundIp ?? '';
+    if (_ipAddress.isNotEmpty) {
+      setState(() {
+        _statusLabel = 'Device: $_ipAddress';
+      });
+      await mySoundTouch.getXmlNowPlaying(_nowPlaying);
+      updateLabelsFromNowPlaying();
+    } else {
+      setState(() {
+        _statusLabel = 'Device not found';
+      });
     }
   }
 
-  // ****************************************************************************************************
-  // Send XML Command - Key Press and Release
-  // ****************************************************************************************************
-  Future<void> sendXmlKey(String command) async {
-    final url = Uri.parse('http://$_ipAddress:8090/key');
-    final pressXml =
-        '<?xml version="1.0" ?>'
-        '<key state="press" sender="Gabbo">$command</key>';
-
-    final releaseXml =
-        '<?xml version="1.0" ?>'
-        '<key state="release" sender="Gabbo">$command</key>';
-    try {
-      await http.post(
-        url,
-        headers: {'Content-Type': 'application/xml; charset=utf-8'},
-        body: pressXml,
-      );
-      await Future.delayed(Duration(milliseconds: 100));
-      await http.post(
-        url,
-        headers: {'Content-Type': 'application/xml; charset=utf-8'},
-        body: releaseXml,
-      );
-      print('⚠️ Sent XML command Key: $command');
-    } catch (e) {
-      print('⚠️ XML command HTTP error: $e');
-    }
-  }
-
-  // ****************************************************************************************************
-  // Send XML Command - Volume
-  // ****************************************************************************************************
-  Future<void> sendXmlVolume(int volume) async {
-    final url = Uri.parse('http://$_ipAddress:8090/volume');
-    final xml =
-        '<?xml version="1.0" ?>'
-        '<volume>$volume</volume>';
-    try {
-      await http.post(
-        url,
-        headers: {'Content-Type': 'application/xml; charset=utf-8'},
-        body: xml,
-      );
-      print('⚠️ Sent XML command Volume: $volume');
-    } catch (e) {
-      print('⚠️ XML command HTTP error: $e');
-    }
-  }
-
-  // pressed Play button
+  // Pressed Play button
   void _pressPlayPause() async {
     print('⚠️ Pressing Play/Pause...');
-    await sendXmlKey('PLAY_PAUSE');
+    await mySoundTouch.sendXmlKey('PLAY_PAUSE');
   }
 
-  // pressed Previous button
+  // Pressed Previous button
   void _pressPreviousTrack() async {
     print('⚠️ Skipping to Previous track...');
-    await sendXmlKey('PREV_TRACK');
+    await mySoundTouch.sendXmlKey('PREV_TRACK');
   }
 
-  // pressed Next button
+  // Pressed Next button
   void _pressNextTrack() async {
     print('⚠️ Skipping to Next track...');
-    await sendXmlKey('NEXT_TRACK');
+    await mySoundTouch.sendXmlKey('NEXT_TRACK');
   }
 
-  // pressed Repeat button
+  // Pressed Repeat button
   void _pressRepeat() async {
     if (_repeatMode == 'Off') {
       print('⚠️ Setting Repeat all...');
-      await sendXmlKey('REPEAT_ALL');
+      await mySoundTouch.sendXmlKey('REPEAT_ALL');
       _repeatMode = 'All';
     } else if (_repeatMode == 'All') {
       print('⚠️ Setting Repeat one...');
-      await sendXmlKey('REPEAT_ONE');
+      await mySoundTouch.sendXmlKey('REPEAT_ONE');
       _repeatMode = 'One';
     } else if (_repeatMode == 'One') {
       print('⚠️ Setting Repeat off...');
-      await sendXmlKey('REPEAT_OFF');
+      await mySoundTouch.sendXmlKey('REPEAT_OFF');
       _repeatMode = 'Off';
-    } // set repeat mode here or wait for status-info ?
+    }
+    // TODO: set repeat mode here or wait for status-info ?
   }
 
-  // pressed Shuffle button
+  // Pressed Shuffle button
   void _pressShuffle() async {
     if (_shuffleMode == 'Off') {
       print('⚠️ Setting Shuffle on...');
-      await sendXmlKey('SHUFFLE_ON');
+      await mySoundTouch.sendXmlKey('SHUFFLE_ON');
       _shuffleMode = 'On';
     } else {
       print('⚠️ Setting Shuffle off...');
-      await sendXmlKey('SHUFFLE_OFF');
+      await mySoundTouch.sendXmlKey('SHUFFLE_OFF');
       _shuffleMode = 'Off';
     }
-    // set shuffle mode here or wait for status-info ?
+    // TODO: set shuffle mode here or wait for status-info ?
   }
 
-  // pressed Volume down
+  // Pressed Volume down
   void _pressVolumeDown() async {
     print('⚠️ Setting Volume down...');
-    await sendXmlKey('VOLUME_DOWN');
+    await mySoundTouch.sendXmlKey('VOLUME_DOWN');
   }
 
-  // pressed Volume down
+  // Pressed Volume down
   void _pressVolumeUp() async {
     print('⚠️ Setting Volume up...');
-    await sendXmlKey('VOLUME_UP');
+    await mySoundTouch.sendXmlKey('VOLUME_UP');
   }
 
-  // pressed Preset button
+  // Pressed a Preset button
   void _pressPreset(int number) async {
     print('⚠️ Selecting Preset $number...');
-    await sendXmlKey('PRESET_$number');
+    await mySoundTouch.sendXmlKey('PRESET_$number');
   }
 
-  // changed Volume slider
+  // Changed Volume slider
   void _changedVolume(double value) async {
     setState(() {
       _volume = value;
-      // set volume here or wait for status-info ?
+      // TODO: set volume here or wait for status-info ?
     });
-    await sendXmlVolume(value.toInt());
+    await mySoundTouch.sendXmlVolume(value.toInt());
   }
 
-  // pressed MediaBrowser button
+  // Pressed MediaBrowser button
   void _pressMediaBrowser() async {
     setState(() {
       _statusLabel = 'Media Browser...';
     });
-    await sendXmlNowPlaying();
+    await mySoundTouch.getXmlNowPlaying(_nowPlaying);
     updateLabelsFromNowPlaying();
   }
 
@@ -349,6 +215,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (_trackNumberLabel != '') {
         _trackNumberLabel = 'Track ' + _trackNumberLabel;
       }
+      // Shuffle
       _shuffleLabel = _nowPlaying['shuffleSetting'].toString();
       if (_shuffleLabel != '') {
         _shuffleLabel = _shuffleLabel
@@ -359,9 +226,10 @@ class _MyHomePageState extends State<MyHomePage> {
       } else {
         _shuffleLabel = 'Shuffle';
       }
+      // Repeat
       _repeatLabel = _nowPlaying['repeatSetting'].toString();
       if (_repeatLabel != '') {
-        _repeatLabel = _shuffleLabel
+        _repeatLabel = _repeatLabel
             .toString()
             .split('_')
             .map((w) => '${w[0]}${w.substring(1).toLowerCase()}')
@@ -369,12 +237,16 @@ class _MyHomePageState extends State<MyHomePage> {
       } else {
         _repeatLabel = 'Repeat';
       }
-      // play status sets button icon
+      // Play status sets button icon
       if (_playStatus == 'PLAY_STATE') {
-        // set icon to play
+        // Set icon to play
       } else if (_playStatus == 'PAUSE_STATE') {
-        // set icon to pause
+        // Set icon to pause
       }
+      // Volume
+      String volumeStr = _nowPlaying['volume'].toString();
+      _volume = double.parse(volumeStr);
+      _volumeLabel = 'Volume: $volumeStr';
     });
   }
 
@@ -384,10 +256,10 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-      ),
+      //appBar: AppBar(
+      //  backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      //  title: Text(widget.title),
+      //),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -398,7 +270,8 @@ class _MyHomePageState extends State<MyHomePage> {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w500,
-                color: Colors.white,
+                //color: Colors.white,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
             SizedBox(height: 8),
@@ -408,7 +281,7 @@ class _MyHomePageState extends State<MyHomePage> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
-                color: Theme.of(context).colorScheme.primary,
+                color: Theme.of(context).colorScheme.secondary,
               ),
             ),
             SizedBox(height: 4),
@@ -418,7 +291,7 @@ class _MyHomePageState extends State<MyHomePage> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
-                color: Theme.of(context).colorScheme.primary,
+                color: Theme.of(context).colorScheme.secondary,
               ),
             ),
             SizedBox(height: 4),
@@ -463,7 +336,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                       minimumSize: const Size(72, 64),
                     ),
-                    // TODO: set the icon some other way
+                    // TODO: maybe set the icon some other way (?)
                     child: (_playStatus == 'PLAY_STATE'
                         ? const Icon(Icons.pause, size: 38)
                         : const Icon(Icons.play_arrow, size: 38)),
@@ -552,8 +425,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 const SizedBox(width: 28),
                 // Volume label
-                const Text(
-                  'Volume',
+                Text(
+                  _volumeLabel,
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(width: 28),
@@ -694,4 +567,8 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     );
   }
+
+  // ****************************************************************************************************
+  // Class end
+  // ****************************************************************************************************
 }
