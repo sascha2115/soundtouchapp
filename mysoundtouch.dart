@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:bonsoir/bonsoir.dart';
-import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
@@ -11,6 +10,7 @@ class MySoundTouch {
   String? get ipAddress => _ipAddress;
   String _source = 'STORED_MUSIC';
   String _sourceAccount = '';
+  //String _sourceAccount = '10809696-105a-3721-e8b8-f4b5aa96c210/0';
   // Array to hold media items, i.e. ['0$4$215', 'Foldername']
 
   // ****************************************************************************************************
@@ -171,7 +171,7 @@ class MySoundTouch {
         print('Body: ${response.body}');
       }
     } catch (e) {
-      print('Get XML now_playing HTTP error: $e');
+      print('XML now_playing HTTP error: $e');
     }
 
     // Also get the volume
@@ -193,7 +193,7 @@ class MySoundTouch {
         print('Body: ${response.body}');
       }
     } catch (e) {
-      print('Get XML now_playing HTTP error: $e');
+      print('XML volume HTTP error: $e');
     }
     print('⚠️ Now Playing: $nowPlaying');
   }
@@ -231,7 +231,11 @@ class MySoundTouch {
         print('Body: ${response.body}');
       }
     } catch (e) {
-      print('Get XML sources HTTP error: $e');
+      print('XML sources HTTP error: $e');
+    }
+    if (_sourceAccount == '') {
+      print('⚠️ No Sources found');
+      return;
     }
     print('⚠️ SourceAccount: $_sourceAccount');
   }
@@ -239,9 +243,12 @@ class MySoundTouch {
   // ****************************************************************************************************
   // Send XML Command (POST) "Navigate" and Receive XML
   // ****************************************************************************************************
-  Future<String> sendXmlNavigate() async {
+  Future<String> sendXmlNavigate({String location = ''}) async {
     String xmlString = ''; // future response
-    final location = r'0$4$215'; // directly skip to 'Folder'
+    if (location == '') {
+      location = r'0$4$215'; // root -> /mnt/usb1_1 -> Folder
+      // TODO: This location must not be hardcoded
+    }
     final url = Uri.parse('http://$_ipAddress:8090/navigate');
     final xml =
         '<?xml version="1.0"?>'
@@ -249,10 +256,10 @@ class MySoundTouch {
         '<item>'
         '<name></name>'
         '<type>dir</type>'
-        '<ContentItem source="{SOURCE}" location="$location" sourceAccount="{SOURCE_ACCOUNT}">'
-        '</ContentItem>'
+        '<ContentItem location="$location"></ContentItem>'
         '</item>'
         '</navigate>';
+    //print('⚠️ Request XML: $xml');
     try {
       final response = await http.post(
         url,
@@ -268,7 +275,7 @@ class MySoundTouch {
       }
       print('⚠️ Sent XML command navigate');
     } catch (e) {
-      print('⚠️ XML volume HTTP error: $e');
+      print('⚠️ XML navigate HTTP error: $e');
     }
     return xmlString;
   }
@@ -276,8 +283,9 @@ class MySoundTouch {
   // ****************************************************************************************************
   // Get Media Browser Items
   // ****************************************************************************************************
-  Future<void> getMediaBrowserItems(Map mediaItemList) async {
+  Future<void> getMediaBrowserItems(Map mediaItemList, String location) async {
     await getXmlSources();
+    if (_sourceAccount == '') return;
     mediaItemList.clear();
     String xmlString = await sendXmlNavigate();
     final document = XmlDocument.parse(xmlString);
@@ -304,8 +312,7 @@ class MySoundTouch {
         mediaItemList[location] = itemName;
       }
     }
-    print(mediaItemList);
-    print('Found Item Data:');
+    print('⚠️ Found itemlist: $mediaItemList');
   }
 
   // ****************************************************************************************************
