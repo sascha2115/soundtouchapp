@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:bonsoir/bonsoir.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
@@ -8,10 +9,12 @@ import 'package:xml/xml.dart';
 class MySoundTouch {
   String? _ipAddress;
   String? get ipAddress => _ipAddress;
-  //Map<String, String> _nowPlaying = {};
+  String _source = 'STORED_MUSIC';
+  String _sourceAccount = '';
+  // Array to hold media items, i.e. ['0$4$215', 'Foldername']
 
   // ****************************************************************************************************
-  // Discover device
+  // Discover Device
   // ****************************************************************************************************
   Future<String?> discoverDevice() async {
     // Check if we have a stored IP from last time
@@ -82,7 +85,7 @@ class MySoundTouch {
   }
 
   // ****************************************************************************************************
-  // Send XML Command - Key Press and Release
+  // Send XML Command (POST) for Key Press and Release
   // ****************************************************************************************************
   Future<void> sendXmlKey(String command) async {
     final url = Uri.parse('http://$_ipAddress:8090/key');
@@ -105,14 +108,14 @@ class MySoundTouch {
         headers: {'Content-Type': 'application/xml; charset=utf-8'},
         body: releaseXml,
       );
-      print('⚠️ Sent XML command Key: $command');
+      print('⚠️ Sent XML command key: $command');
     } catch (e) {
       print('⚠️ XML command HTTP error: $e');
     }
   }
 
   // ****************************************************************************************************
-  // Send XML Command - Volume
+  // Send XML Command (POST) to Set Volume
   // ****************************************************************************************************
   Future<void> sendXmlVolume(int volume) async {
     final url = Uri.parse('http://$_ipAddress:8090/volume');
@@ -125,16 +128,16 @@ class MySoundTouch {
         headers: {'Content-Type': 'application/xml; charset=utf-8'},
         body: xml,
       );
-      print('⚠️ Sent XML command Volume: $volume');
+      print('⚠️ Sent XML command volume: $volume');
     } catch (e) {
-      print('⚠️ XML command HTTP error: $e');
+      print('⚠️ XML volume HTTP error: $e');
     }
   }
 
   // ****************************************************************************************************
-  // Send command and receive XML for "Now Playing"
+  // Get XML from Command "Now Playing"
   // ****************************************************************************************************
-  Future<void> getXmlNowPlaying(Map _nowPlaying) async {
+  Future<void> getXmlNowPlaying(Map nowPlaying) async {
     Uri url = Uri.parse('http://$_ipAddress:8090/now_playing');
     try {
       final response = await http.get(
@@ -146,20 +149,20 @@ class MySoundTouch {
         String xmlString = response.body;
         //print('XML Response: $xmlString');
         final document = XmlDocument.parse(xmlString);
-        final nowPlaying = document.rootElement;
-        _nowPlaying['track'] = nowPlaying.getElement('track')?.text ?? '';
-        _nowPlaying['artist'] = nowPlaying.getElement('artist')?.text ?? '';
-        _nowPlaying['album'] = nowPlaying.getElement('album')?.text ?? '';
-        _nowPlaying['offset'] = nowPlaying.getElement('offset')?.text ?? '';
-        _nowPlaying['playStatus'] =
-            nowPlaying.getElement('playStatus')?.text ?? '';
-        _nowPlaying['repeatSetting'] =
-            nowPlaying.getElement('repeatSetting')?.text ?? '';
-        _nowPlaying['shuffleSetting'] =
-            nowPlaying.getElement('shuffleSetting')?.text ?? '';
+        final np = document.rootElement;
+        // The following transfers the XML data into the Map "_nowPlaying" from the Main class
+        nowPlaying['track'] = np.getElement('track')?.text ?? '';
+        nowPlaying['artist'] = np.getElement('artist')?.text ?? '';
+        nowPlaying['album'] = np.getElement('album')?.text ?? '';
+        nowPlaying['offset'] = np.getElement('offset')?.text ?? '';
+        nowPlaying['playStatus'] = np.getElement('playStatus')?.text ?? '';
+        nowPlaying['repeatSetting'] =
+            np.getElement('repeatSetting')?.text ?? '';
+        nowPlaying['shuffleSetting'] =
+            np.getElement('shuffleSetting')?.text ?? '';
         final contentItem = document.rootElement.getElement('ContentItem');
         if (contentItem != null) {
-          _nowPlaying['location'] =
+          nowPlaying['location'] =
               contentItem.getAttribute('location')?.toString() ?? '';
           // This is the location of the containing folder, not the actual track !
         }
@@ -184,12 +187,125 @@ class MySoundTouch {
         final document = XmlDocument.parse(xmlString);
         final actualvolume = document.rootElement.getElement('actualvolume');
         //print('⚠️ actualvolume = $volume');
-        _nowPlaying['volume'] = actualvolume?.text ?? '';
+        nowPlaying['volume'] = actualvolume?.text ?? '';
+      } else {
+        print('HTTP error, code: ${response.statusCode}');
+        print('Body: ${response.body}');
       }
     } catch (e) {
       print('Get XML now_playing HTTP error: $e');
     }
-    print('⚠️ Now Playing: $_nowPlaying');
+    print('⚠️ Now Playing: $nowPlaying');
+  }
+
+  // ****************************************************************************************************
+  // Get XML from Command "Sources" and Determine SourceAccount
+  // ****************************************************************************************************
+  Future<void> getXmlSources() async {
+    if (_sourceAccount != '') {
+      print('⚠️ SourceAccount known: $_sourceAccount');
+      return;
+    }
+    Uri url = Uri.parse('http://$_ipAddress:8090/sources');
+    try {
+      final response = await http.get(
+        url,
+        headers: {'Accept': 'application/xml'},
+        // This is optional, hints server to send XML
+      );
+      if (response.statusCode == 200) {
+        String xmlString = response.body;
+        //print('XML Response: $xmlString');
+        final document = XmlDocument.parse(xmlString);
+        print('⚠️ Getting source account for: $_source');
+        final sourceItems = document
+            .findAllElements('sourceItem')
+            .where((element) => element.getAttribute('source') == _source);
+        final sourceItem = sourceItems.isNotEmpty ? sourceItems.first : null;
+        if (sourceItem != null) {
+          _sourceAccount =
+              sourceItem.getAttribute('sourceAccount')?.toString() ?? '';
+        }
+      } else {
+        print('HTTP error, code: ${response.statusCode}');
+        print('Body: ${response.body}');
+      }
+    } catch (e) {
+      print('Get XML sources HTTP error: $e');
+    }
+    print('⚠️ SourceAccount: $_sourceAccount');
+  }
+
+  // ****************************************************************************************************
+  // Send XML Command (POST) "Navigate" and Receive XML
+  // ****************************************************************************************************
+  Future<String> sendXmlNavigate() async {
+    String xmlString = ''; // future response
+    final location = r'0$4$215'; // directly skip to 'Folder'
+    final url = Uri.parse('http://$_ipAddress:8090/navigate');
+    final xml =
+        '<?xml version="1.0"?>'
+        '<navigate source="$_source" sourceAccount="$_sourceAccount">'
+        '<item>'
+        '<name></name>'
+        '<type>dir</type>'
+        '<ContentItem source="{SOURCE}" location="$location" sourceAccount="{SOURCE_ACCOUNT}">'
+        '</ContentItem>'
+        '</item>'
+        '</navigate>';
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/xml; charset=utf-8'},
+        body: xml,
+      );
+      if (response.statusCode == 200) {
+        xmlString = response.body;
+        //print('XML Response: $xmlString');
+      } else {
+        print('HTTP error, code: ${response.statusCode}');
+        print('Body: ${response.body}');
+      }
+      print('⚠️ Sent XML command navigate');
+    } catch (e) {
+      print('⚠️ XML volume HTTP error: $e');
+    }
+    return xmlString;
+  }
+
+  // ****************************************************************************************************
+  // Get Media Browser Items
+  // ****************************************************************************************************
+  Future<void> getMediaBrowserItems(Map mediaItemList) async {
+    await getXmlSources();
+    mediaItemList.clear();
+    String xmlString = await sendXmlNavigate();
+    final document = XmlDocument.parse(xmlString);
+    final allItems = document.findAllElements('item');
+    final allContentItems = allItems.expand(
+      (item) => item.findAllElements('ContentItem'),
+    );
+    final contentItems = allContentItems.where((contentItem) {
+      // The parent element's name must be 'item' for it to be included.
+      return contentItem.parentElement?.name.local == 'item';
+      // We check parent?.name.local to safely access the parent's name.
+    });
+
+    for (final contentItem in contentItems) {
+      final itemName = contentItem
+          .findElements('itemName')
+          .firstOrNull
+          ?.innerText;
+      final location = contentItem.getAttribute('location');
+
+      // Store the data only if both are present
+      if (itemName != null && location != null) {
+        // The key is 'location', the value is 'itemName'
+        mediaItemList[location] = itemName;
+      }
+    }
+    print(mediaItemList);
+    print('Found Item Data:');
   }
 
   // ****************************************************************************************************

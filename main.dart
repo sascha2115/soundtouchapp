@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:window_size/window_size.dart';
+import 'package:flutter/services.dart';
 import 'mysoundtouch.dart';
 
 void main() async {
@@ -62,6 +63,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   final MySoundTouch mySoundTouch = MySoundTouch();
+  FocusNode _keyboardFocusNode = FocusNode();
 
   // State variables to hold  text labels
   String _trackLabel = 'Track Name';
@@ -86,9 +88,12 @@ class _MyHomePageState extends State<MyHomePage> {
   // Source can be: STORED_MUSIC or TUNEIN or some others...
   String _sourceAccount = '10809696-105a-3721-e8b8-f4b5aa96c210/0';
   // TODO: get source account on filebrowser open
-
+  bool _showMediaBrowser = false;
+  // Array to hold media items, i.e. ['0$4$215', 'Foldername']
+  Map<String, String> _mediaItemList = {};
   // Array to hold the curent "NowPlaying" info
   Map<String, String> _nowPlaying = {};
+
   // TODO: maybe later we add _skipEnabled and _skipPreviousEnabled
 
   // Initialization
@@ -96,6 +101,9 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     _initAsync();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _keyboardFocusNode.requestFocus();
+    });
   }
 
   // Initialization
@@ -195,8 +203,13 @@ class _MyHomePageState extends State<MyHomePage> {
   // Pressed MediaBrowser button
   void _pressMediaBrowser() async {
     setState(() {
-      _statusLabel = 'Media Browser...';
+      _showMediaBrowser = true;
     });
+    mySoundTouch.getMediaBrowserItems(_mediaItemList);
+  }
+
+  // Pressed Update button
+  void _pressUpdate() async {
     await mySoundTouch.getXmlNowPlaying(_nowPlaying);
     updateLabelsFromNowPlaying();
   }
@@ -213,7 +226,7 @@ class _MyHomePageState extends State<MyHomePage> {
       _playStatus = _nowPlaying['playStatus'].toString();
       _trackNumberLabel = _nowPlaying['offset'].toString();
       if (_trackNumberLabel != '') {
-        _trackNumberLabel = 'Track ' + _trackNumberLabel;
+        _trackNumberLabel = 'Track $_trackNumberLabel';
       }
       // Shuffle
       _shuffleLabel = _nowPlaying['shuffleSetting'].toString();
@@ -251,6 +264,66 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   // ****************************************************************************************************
+  // Handle Keyboard Events
+  // ****************************************************************************************************
+  void _handleKeyPress(KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.space) {
+      _pressPlayPause();
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _pressPreviousTrack();
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _pressNextTrack();
+    }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.minus) {
+      _pressVolumeDown();
+    }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.add) {
+      _pressVolumeUp();
+    }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.keyR) {
+      _pressRepeat();
+    }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.keyS) {
+      _pressShuffle();
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.digit1) {
+      _pressPreset(1);
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.digit2) {
+      _pressPreset(2);
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.digit3) {
+      _pressPreset(3);
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.digit4) {
+      _pressPreset(4);
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.digit5) {
+      _pressPreset(5);
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.digit6) {
+      _pressPreset(6);
+    }
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.keyU) {
+      _pressUpdate();
+    }
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() => _showMediaBrowser = false);
+    }
+  }
+
+  // ****************************************************************************************************
   // GUI Design
   // ****************************************************************************************************
   @override
@@ -260,315 +333,435 @@ class _MyHomePageState extends State<MyHomePage> {
       //  backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       //  title: Text(widget.title),
       //),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            // Track name
-            Text(
-              _trackLabel,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w500,
-                //color: Colors.white,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            SizedBox(height: 8),
-            // Artist label
-            Text(
-              _artistLabel,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-            ),
-            SizedBox(height: 4),
-            // Album label
-            Text(
-              _albumLabel,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-            ),
-            SizedBox(height: 4),
-            // Tracknumber label
-            Text(
-              _trackNumberLabel,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                color: Colors.blueGrey.shade500,
-              ),
-            ),
-            SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20, top: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Previous button
-                  ElevatedButton(
-                    onPressed: _pressPreviousTrack,
-
-                    style: ElevatedButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 16,
-                      ),
-                      minimumSize: const Size(48, 48),
-                    ),
-                    child: const Icon(Icons.skip_previous, size: 28),
-                  ),
-                  const SizedBox(width: 10),
-                  // Play/Pause button
-                  ElevatedButton(
-                    onPressed: _pressPlayPause,
-                    style: ElevatedButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 18,
-                      ),
-                      minimumSize: const Size(72, 64),
-                    ),
-                    // TODO: maybe set the icon some other way (?)
-                    child: (_playStatus == 'PLAY_STATE'
-                        ? const Icon(Icons.pause, size: 38)
-                        : const Icon(Icons.play_arrow, size: 38)),
-                  ),
-                  const SizedBox(width: 10),
-                  // Next button
-                  ElevatedButton(
-                    onPressed: _pressNextTrack,
-                    style: ElevatedButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 16,
-                      ),
-                      minimumSize: const Size(48, 48),
-                    ),
-                    child: const Icon(Icons.skip_next, size: 28),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20, top: 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Repeat button
-                  ElevatedButton(
-                    onPressed: _pressRepeat,
-                    style: ElevatedButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 16,
-                      ),
-                      minimumSize: const Size(48, 48),
-                    ),
-                    child: Text(_repeatLabel, style: TextStyle(fontSize: 14)),
-                  ),
-                  const SizedBox(width: 10),
-                  // Shuffle button
-                  ElevatedButton(
-                    onPressed: _pressShuffle,
-                    style: ElevatedButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 16,
-                      ),
-                      minimumSize: const Size(48, 48),
-                    ),
-                    child: Text(_shuffleLabel, style: TextStyle(fontSize: 14)),
-                  ),
-                ],
-              ),
-            ),
-            // Volume slider
-            Padding(
-              padding: const EdgeInsets.only(left: 20, right: 20),
-              child: Slider(
-                value: _volume,
-                max: _maxVolume,
-                divisions: _maxVolume.toInt(),
-                label: _volume.toStringAsFixed(0),
-                onChanged: (double value) {
-                  _changedVolume(value);
-                },
-              ),
-            ),
-            // Volume buttons and label
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Volume down
-                ElevatedButton(
-                  onPressed: _pressVolumeDown,
-                  style: ElevatedButton.styleFrom(
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                    minimumSize: const Size(40, 40),
-                  ),
-                  child: const Icon(Icons.remove, size: 24),
-                ),
-                const SizedBox(width: 28),
-                // Volume label
-                Text(
-                  _volumeLabel,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 28),
-                // Volume up
-                ElevatedButton(
-                  onPressed: _pressVolumeUp,
-                  style: ElevatedButton.styleFrom(
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                    minimumSize: const Size(40, 40),
-                  ),
-                  child: const Icon(Icons.add, size: 24),
-                ),
-              ],
-            ),
-            SizedBox(height: 12),
-
-            // Presets
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20, top: 20),
+      body: KeyboardListener(
+        focusNode: _keyboardFocusNode,
+        onKeyEvent: _handleKeyPress,
+        child: Stack(
+          children: [
+            Center(
               child: Column(
-                children: [
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  // Track name
+                  Text(
+                    _trackLabel,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w500,
+                      //color: Colors.white,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  // Artist label
+                  Text(
+                    _artistLabel,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  // Album label
+                  Text(
+                    _albumLabel,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  // Tracknumber label
+                  Text(
+                    _trackNumberLabel,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.blueGrey.shade500,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20, top: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Previous button
+                        ElevatedButton(
+                          onPressed: _pressPreviousTrack,
+
+                          style: ElevatedButton.styleFrom(
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 16,
+                            ),
+                            minimumSize: const Size(48, 48),
+                          ),
+                          child: const Icon(Icons.skip_previous, size: 28),
+                        ),
+                        const SizedBox(width: 10),
+                        // Play/Pause button
+                        ElevatedButton(
+                          onPressed: _pressPlayPause,
+                          style: ElevatedButton.styleFrom(
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 18,
+                            ),
+                            minimumSize: const Size(72, 64),
+                          ),
+                          // TODO: maybe set the icon some other way (?)
+                          child: (_playStatus == 'PLAY_STATE'
+                              ? const Icon(Icons.pause, size: 38)
+                              : const Icon(Icons.play_arrow, size: 38)),
+                        ),
+                        const SizedBox(width: 10),
+                        // Next button
+                        ElevatedButton(
+                          onPressed: _pressNextTrack,
+                          style: ElevatedButton.styleFrom(
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 16,
+                            ),
+                            minimumSize: const Size(48, 48),
+                          ),
+                          child: const Icon(Icons.skip_next, size: 28),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20, top: 0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Repeat button
+                        ElevatedButton(
+                          onPressed: _pressRepeat,
+                          style: ElevatedButton.styleFrom(
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 16,
+                            ),
+                            minimumSize: const Size(48, 48),
+                          ),
+                          child: Text(
+                            _repeatLabel,
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // Shuffle button
+                        ElevatedButton(
+                          onPressed: _pressShuffle,
+                          style: ElevatedButton.styleFrom(
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 16,
+                            ),
+                            minimumSize: const Size(48, 48),
+                          ),
+                          child: Text(
+                            _shuffleLabel,
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Volume slider
+                  Padding(
+                    padding: const EdgeInsets.only(left: 20, right: 20),
+                    child: Slider(
+                      value: _volume,
+                      max: _maxVolume,
+                      divisions: _maxVolume.toInt(),
+                      label: _volume.toStringAsFixed(0),
+                      onChanged: (double value) {
+                        _changedVolume(value);
+                      },
+                    ),
+                  ),
+                  // Volume buttons and label
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Volume down
                       ElevatedButton(
-                        onPressed: () => _pressPreset(1),
+                        onPressed: _pressVolumeDown,
                         style: ElevatedButton.styleFrom(
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
+                            horizontal: 16,
                             vertical: 16,
                           ),
-                          minimumSize: const Size(64, 48),
+                          minimumSize: const Size(40, 40),
                         ),
-                        child: Text('1', style: TextStyle(fontSize: 18)),
+                        child: const Icon(Icons.remove, size: 24),
                       ),
-                      SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () => _pressPreset(2),
-                        style: ElevatedButton.styleFrom(
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 16,
-                          ),
-                          minimumSize: const Size(64, 48),
+                      const SizedBox(width: 28),
+                      // Volume label
+                      Text(
+                        _volumeLabel,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
-                        child: Text('2', style: TextStyle(fontSize: 18)),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 28),
+                      // Volume up
                       ElevatedButton(
-                        onPressed: () => _pressPreset(3),
+                        onPressed: _pressVolumeUp,
                         style: ElevatedButton.styleFrom(
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
+                            horizontal: 16,
                             vertical: 16,
                           ),
-                          minimumSize: const Size(64, 48),
+                          minimumSize: const Size(40, 40),
                         ),
-                        child: Text('3', style: TextStyle(fontSize: 18)),
+                        child: const Icon(Icons.add, size: 24),
                       ),
                     ],
                   ),
                   SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () => _pressPreset(4),
-                        style: ElevatedButton.styleFrom(
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 16,
-                          ),
-                          minimumSize: const Size(64, 48),
+
+                  // Presets
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20, top: 20),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton(
+                              onPressed: () => _pressPreset(1),
+                              style: ElevatedButton.styleFrom(
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 16,
+                                ),
+                                minimumSize: const Size(64, 48),
+                              ),
+                              child: Text('1', style: TextStyle(fontSize: 18)),
+                            ),
+                            SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () => _pressPreset(2),
+                              style: ElevatedButton.styleFrom(
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 16,
+                                ),
+                                minimumSize: const Size(64, 48),
+                              ),
+                              child: Text('2', style: TextStyle(fontSize: 18)),
+                            ),
+                            SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () => _pressPreset(3),
+                              style: ElevatedButton.styleFrom(
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 16,
+                                ),
+                                minimumSize: const Size(64, 48),
+                              ),
+                              child: Text('3', style: TextStyle(fontSize: 18)),
+                            ),
+                          ],
                         ),
-                        child: Text('4', style: TextStyle(fontSize: 18)),
-                      ),
-                      SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () => _pressPreset(5),
-                        style: ElevatedButton.styleFrom(
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 16,
-                          ),
-                          minimumSize: const Size(64, 48),
+                        SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton(
+                              onPressed: () => _pressPreset(4),
+                              style: ElevatedButton.styleFrom(
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 16,
+                                ),
+                                minimumSize: const Size(64, 48),
+                              ),
+                              child: Text('4', style: TextStyle(fontSize: 18)),
+                            ),
+                            SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () => _pressPreset(5),
+                              style: ElevatedButton.styleFrom(
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 16,
+                                ),
+                                minimumSize: const Size(64, 48),
+                              ),
+                              child: Text('5', style: TextStyle(fontSize: 18)),
+                            ),
+                            SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () => _pressPreset(6),
+                              style: ElevatedButton.styleFrom(
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 16,
+                                ),
+                                minimumSize: const Size(64, 48),
+                              ),
+                              child: Text('6', style: TextStyle(fontSize: 18)),
+                            ),
+                          ],
                         ),
-                        child: Text('5', style: TextStyle(fontSize: 18)),
+                      ],
+                    ),
+                  ),
+                  // Media Browser button
+                  ElevatedButton(
+                    onPressed: _pressMediaBrowser,
+                    style: ElevatedButton.styleFrom(
+                      shape: const StadiumBorder(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
                       ),
-                      SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () => _pressPreset(6),
-                        style: ElevatedButton.styleFrom(
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 16,
-                          ),
-                          minimumSize: const Size(64, 48),
-                        ),
-                        child: Text('6', style: TextStyle(fontSize: 18)),
-                      ),
-                    ],
+                      minimumSize: const Size(64, 48),
+                    ),
+                    child: Text(
+                      'Media Browser',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  SizedBox(height: 48),
+
+                  // Status label
+                  Text(
+                    _statusLabel,
+                    style: TextStyle(fontSize: 12, color: Colors.blueGrey),
                   ),
                 ],
               ),
             ),
-            // Media Browser button
-            ElevatedButton(
-              onPressed: _pressMediaBrowser,
-              style: ElevatedButton.styleFrom(
-                shape: const StadiumBorder(),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 16,
+            // Second Layer: Media Browser
+            if (_showMediaBrowser)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withOpacity(0.5),
+                  child: Center(
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 16,
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  ElevatedButton(
+                                    onPressed: () {},
+                                    style: ElevatedButton.styleFrom(
+                                      shape: const StadiumBorder(),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 32,
+                                        vertical: 16,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '← Back',
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => setState(
+                                      () => _showMediaBrowser = false,
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      shape: const StadiumBorder(),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 32,
+                                        vertical: 16,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Close',
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: _mediaItemList.length,
+                                itemBuilder: (context, index) {
+                                  return ListTile(
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    leading: Icon(
+                                      Icons.folder,
+                                      size: 28,
+                                      color: Colors.blue,
+                                    ),
+                                    title: Text(
+                                      _mediaItemList.values.toList()[index],
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    trailing: Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 14,
+                                      color: Colors.grey,
+                                    ),
+                                    // Optional: onTap handler
+                                    onTap: () {
+                                      // Handle tap event here
+                                    },
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ), // controls horizontal padding
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                minimumSize: const Size(64, 48),
               ),
-              child: Text('Media Browser', style: TextStyle(fontSize: 14)),
-            ),
-            SizedBox(height: 48),
-
-            // Status label
-            Text(
-              _statusLabel,
-              style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-            ),
           ],
         ),
       ),
     );
   }
 
+  @override
+  void dispose() {
+    _keyboardFocusNode.dispose();
+    super.dispose();
+  }
+
   // ****************************************************************************************************
-  // Class end
+  // Class '_MyHomePageState' end
   // ****************************************************************************************************
 }
